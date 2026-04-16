@@ -1,0 +1,13 @@
+{
+  "name": "qotd",
+  "version": "1.0.0",
+  "description": "Quote of the Day with Express.js filtering",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}

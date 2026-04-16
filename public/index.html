@@ -18,18 +18,12 @@
     </div>
 <script>
 async function loadQnA() {
-  const res = await fetch('qna.json');
-  const data = await res.json();
-
-  const today = new Date().toLocaleDateString('en-CA');
-
-  if (data[today]) {
-    document.getElementById('question').innerHTML = data[today].q;
-    document.getElementById('answer').innerHTML = data[today].a;
-  } else {
-    document.getElementById('question').innerHTML = 'Ingen spørsmål i dag.';
-    document.getElementById('answer').innerHTML = '';
-  }
+fetch('/api/qna')
+  .then(r => r.json())
+  .then(d => {
+    document.getElementById('question').innerHTML = d.q;
+    document.getElementById('answer').innerHTML = d.a;
+  });
 }
 
 const checkbox = document.getElementById('toggleAnswer');
