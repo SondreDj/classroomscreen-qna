@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QOTD Admin</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+    form { background: #f5f5f5; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+    input, textarea { width: 100%; padding: 8px; margin-bottom: 10px; box-sizing: border-box; }
+    button { padding: 10px 20px; cursor: pointer; }
+    .question-item { background: #f5f5f5; padding: 15px; margin-bottom: 10px; border-radius: 8px; }
+    .question-item .date { font-weight: bold; color: #333; }
+    .question-item .q { margin: 10px 0; }
+    .question-item .a { color: #666; }
+    .delete-btn { padding: 5px 10px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }
+    #status { margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <h1>Add Question</h1>
+  <form id="add-form">
+    <div>
+      <label>Date</label>
+      <input type="date" id="date-input" required>
+    </div>
+    <div>
+      <label>Question</label>
+      <textarea id="q-input" rows="2" required></textarea>
+    </div>
+    <div>
+      <label>Answer</label>
+      <textarea id="a-input" rows="2" required></textarea>
+    </div>
+    <button type="submit">Add Question</button>
+  </form>
+  <div id="status"></div>
+
+  <h2>All Questions</h2>
+  <div id="questions-list"></div>
+
+  <script>
+    const form = document.getElementById('add-form');
+    const status = document.getElementById('status');
+    const list = document.getElementById('questions-list');
+    let authToken = localStorage.getItem('qotd_token');
+
+    function renderList(data) {
+      const dates = Object.keys(data).sort().reverse();
+      if (dates.length === 0) {
+        list.innerHTML = '<p>No questions yet.</p>';
+        return;
+      }
+      list.innerHTML = dates.map(date => `
+        <div class="question-item">
+          <div class="date">${date}</div>
+          <div class="q">${data[date].q}</div>
+          <div class="a">${data[date].a}</div>
+          <button class="delete-btn" onclick="deleteQuestion('${date}')">Delete</button>
+        </div>
+      `).join('');
+    }
+
+    async function deleteQuestion(date) {
+      if (!confirm(`Delete question for ${date}?`)) return;
+      const res = await fetch(`/api/questions/${date}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        loadQuestions();
+      } else {
+        alert('Failed to delete');
+      }
+    }
+
+    async function loadQuestions() {
+      if (!authToken) {
+        authToken = prompt('Admin password:');
+        if (!authToken) {
+          list.innerHTML = '<p>Please enter password to view questions.</p>';
+          return;
+        }
+        localStorage.setItem('qotd_token', authToken);
+        loadQuestions();
+        return;
+      }
+
+      const res = await fetch('/api/questions', {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+
+      if (res.status === 401) {
+        authToken = null;
+        localStorage.removeItem('qotd_token');
+        alert('Invalid password');
+        loadQuestions();
+        return;
+      }
+
+      const data = await res.json();
+      renderList(data);
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const date = document.getElementById('date-input').value;
+      const q = document.getElementById('q-input').value;
+      const a = document.getElementById('a-input').value;
+
+      const res = await fetch('/api/questions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ date, q, a })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        status.textContent = 'Question added!';
+        status.style.color = 'green';
+        form.reset();
+        loadQuestions();
+      } else {
+        status.textContent = data.error;
+        status.style.color = 'red';
+      }
+    });
+
+    loadQuestions();
+  </script>
+</body>
+</html>
