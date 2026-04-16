@@ -1,12 +1,80 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcrypt');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'secret123';
 
+const SALT_ROUNDS = 10;
+let hashedPassword = null;
+
 const dataPath = path.join(__dirname, 'data', 'qna.json');
+
+async function hashPassword(password) {
+  return bcrypt.hash(password, SALT_ROUNDS);
+}
+
+async function initHash() {
+  hashedPassword = await hashPassword(ADMIN_PASSWORD);
+}
+
+const failedAttempts = new Map();
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_TIME = 15 * 60 * 1000;
+
+function getClientId(req) {
+  return req.ip || req.connection.remoteAddress || 'unknown';
+}
+
+function checkBruteForce(req, res, next) {
+  const clientId = getClientId(req);
+  const attempts = failedAttempts.get(clientId) || { count: 0, lockedUntil: 0 };
+
+  if (attempts.lockedUntil > Date.now()) {
+    const remaining = Math.ceil((attempts.lockedUntil - Date.now()) / 1000);
+    return res.status(429).json({
+      error: 'Too many failed attempts',
+      retryAfter: remaining
+    });
+  }
+
+  req.clientId = clientId;
+  next();
+}
+
+function recordFailedAttempt(req) {
+  const clientId = req.clientId;
+  const attempts = failedAttempts.get(clientId) || { count: 0, lockedUntil: 0 };
+
+  attempts.count++;
+
+  if (attempts.count >= MAX_ATTEMPTS) {
+    attempts.lockedUntil = Date.now() + LOCKOUT_TIME;
+  }
+
+  failedAttempts.set(clientId, attempts);
+}
+
+function resetFailedAttempts(req) {
+  failedAttempts.set(req.clientId, { count: 0, lockedUntil: 0 });
+}
+
+const authLimiter = rateLimit({
+  windowMs: LOCKOUT_TIME,
+  max: MAX_ATTEMPTS,
+  handler: (req, res) => {
+    const retryAfter = Math.ceil(LOCKOUT_TIME / 1000 / 60);
+    return res.status(429).json({
+      error: 'Too many authentication attempts',
+      retryAfter
+    });
+  }
+});
+
+initHash();
 
 if (!fs.existsSync(path.dirname(dataPath))) {
   fs.mkdirSync(path.dirname(dataPath));
@@ -18,12 +86,35 @@ if (!fs.existsSync(dataPath)) {
 app.use(express.static('public'));
 app.use(express.json());
 
-function authenticate(req, res, next) {
+async function checkAuth(req, res, next) {
   const authHeader = req.headers.authorization;
-  if (!authHeader || authHeader !== `Bearer ${ADMIN_PASSWORD}`) {
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  next();
+
+  const token = authHeader.slice(7);
+
+  try {
+    const isValid = await bcrypt.compare(token, hashedPassword);
+
+    if (!isValid) {
+      recordFailedAttempt(req);
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    resetFailedAttempts(req);
+    next();
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+function authenticate(req, res, next) {
+  checkBruteForce(req, res, (err) => {
+    if (err) return next(err);
+    checkAuth(req, res, next);
+  });
 }
 
 function getQnA() {
