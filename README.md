@@ -52,3 +52,31 @@ services:
     env_file:
       - .env
 ```
+
+## Running with Node.js
+
+### Prerequisites
+
+- Node.js 18+
+
+### Setup
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Create a `.env` file (see [Environment Variables](#environment-variables) above).
+
+3. Create the data directory:
+   ```bash
+   mkdir -p data
+   ```
+
+### Run
+
+```bash
+npm start
+```
+
+The server will run at `http://localhost:3000`.
